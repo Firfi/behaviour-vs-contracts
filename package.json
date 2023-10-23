@@ -7,7 +7,11 @@
     "test": "nx test"
   },
   "dependencies": {
-    "tslib": "^2.3.0"
+    "@effect/schema": "^0.45.5",
+    "fp-ts": "^2.16.1",
+    "immutable": "^5.0.0-beta.4",
+    "tslib": "^2.3.0",
+    "typescript-parsec": "^0.3.4"
   },
   "devDependencies": {
     "@nx/eslint": "17.0.1",
