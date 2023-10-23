@@ -12,10 +12,11 @@ import type {
   YChainId,
 } from '@functional-pipelines-demo/source';
 import {
-  reduceToXYMutableNaive0,
-  reduceToXYMutableNaive1,
-  reduceToXYMutableNaive2,
-  reduceToXYMutableNaive3,
+  reduceToXY4,
+  reduceToXYNaive0,
+  reduceToXYNaive1,
+  reduceToXYNaive2,
+  reduceToXYNaive3
 } from '@functional-pipelines-demo/source';
 import { describe, expect } from 'vitest';
 import { isNone } from 'fp-ts/Option';
@@ -311,7 +312,7 @@ const normalizeAscii = flow(trimNewlines, normalizeAsciiRectangle);
  xChainIds in one y chain cannot be duplicated
  */
 
-describe('functionalPipelinesDemo', () => {
+describe('dataStructuresDemo', () => {
   const ASCII = `
 o-x-o-x-o-x
   |       |
@@ -321,7 +322,7 @@ o-x-o     |
 `;
   const ASCII_EVENTS = asciiToEvents(ASCII);
   it('naive valid events should work', () => {
-    expect(pipe(ASCII_EVENTS, reduceToXYMutableNaive0, toAscii)).toEqual(
+    expect(pipe(ASCII_EVENTS, reduceToXYNaive0, toAscii)).toEqual(
       normalizeAscii(ASCII)
     );
   });
@@ -346,7 +347,7 @@ o-x-o     |
           id: nodeIdToTackle,
           chainId: xChainIdToTackle,
         } satisfies GraphEvent),
-        reduceToXYMutableNaive0
+        reduceToXYNaive0
       );
       /*artifacts appear*/
       expect(
@@ -383,7 +384,7 @@ o-x-o     |
             id: nodeIdToTackle,
             chainId: xChainIdToTackle,
           } satisfies GraphEvent),
-          reduceToXYMutableNaive1
+          reduceToXYNaive1
         )
       ).toThrowError('duplicate');
     });
@@ -408,7 +409,7 @@ o-x-o     |
           xChainId: yToTackle.xChainId,
           yChainId: yToTackle.yChainId,
         } satisfies GraphEvent),
-        reduceToXYMutableNaive1
+        reduceToXYNaive1
       );
       /*artifacts appear*/
       expect(
@@ -448,7 +449,7 @@ o-x-o     |
             xChainId: yToTackle.xChainId,
             yChainId: yToTackle.yChainId,
           } satisfies GraphEvent),
-          reduceToXYMutableNaive2
+          reduceToXYNaive2
         )
       ).toThrowError('duplicate');
     });
@@ -475,7 +476,7 @@ o-x-o !   |
           xChainId: xToTackleChainId,
           yChainId: yToTackleChainId,
         } satisfies GraphEvent),
-        reduceToXYMutableNaive2
+        reduceToXYNaive2
       );
       /*artifacts appear*/
       expect(
@@ -507,7 +508,7 @@ o-x-o     |
             xChainId: xToTackleChainId,
             yChainId: yToTackleChainId,
           } satisfies GraphEvent),
-          reduceToXYMutableNaive3
+          reduceToXYNaive3
         )
       ).toThrowError('not initialized');
     });
@@ -517,13 +518,145 @@ o-x-o     |
     it('naive attach duplicated xChainId to y should work', () => {
       // where we try to attach:
       const _ = `
-o-x-o-x-o-!    
+o-x-o-x-!-x    
   |       |    
 o-x-o     |    
   |       |    
   x-------x-o-o            
 `;
-      // TODO here
+      const yToTackle1Node = '4' as NodeId;
+      const xToTackleChainId = '0' as XChainId;
+      const yToTackleChainId = '5' /*1,3,5*/ as YChainId;
+      const graph = pipe(
+        ASCII_EVENTS,
+        RA.appendW({
+          type: 'yAdded',
+          id: yToTackle1Node,
+          xChainId: xToTackleChainId,
+          yChainId: yToTackleChainId,
+        } satisfies GraphEvent),
+        reduceToXYNaive3);
+      /*artifacts appear*/
+      expect(
+        pipe(
+          `
+o-x-o-x-x-x    
+  |     | |    
+o-x-o     |    
+  |       |    
+  x-------x-o-o
+`,
+          trimNewlines
+        )
+      ).toEqual(pipe(graph,
+        toAscii, normalizeAscii
+      ));
+      expect(graph.y.get(yToTackleChainId)!.length).toEqual(3); // invariant broken
     });
+
+    it('final xChainId to y shouldnt work with final', () => {
+      const yToTackle1Node = '4' as NodeId;
+      const xToTackleChainId = '0' as XChainId;
+      const yToTackleChainId = '5' /*1,3,5*/ as YChainId;
+      expect(() => pipe(
+        ASCII_EVENTS,
+        RA.appendW({
+          type: 'yAdded',
+          id: yToTackle1Node,
+          xChainId: xToTackleChainId,
+          yChainId: yToTackleChainId,
+        } satisfies GraphEvent),
+        reduceToXY4)).toThrowError('duplicate');
+    });
+  });
+  describe('final implementation passes all tricks', () => {
+    it('naive valid events should work', () => {
+      expect(pipe(ASCII_EVENTS, reduceToXY4, toAscii)).toEqual(
+        normalizeAscii(ASCII)
+      );
+    });
+    it('dupe node events shouldnt work', () => {
+      const xToTackleO = pipe(
+        ASCII_EVENTS,
+        RA.findFirst(
+          (e): e is typeof e & { type: 'xAdded' } => e.type === 'xAdded'
+        )
+      );
+      if (isNone(xToTackleO))
+        throw new Error('Expected xIdToTackleO to be defined');
+      const xToTackle = xToTackleO.value;
+      const xChainIdToTackle = xToTackle.chainId;
+      const nodeIdToTackle = xToTackle.id;
+      expect(() =>
+        pipe(
+          ASCII_EVENTS,
+          RA.appendW({
+            type: 'xAdded',
+            id: nodeIdToTackle,
+            chainId: xChainIdToTackle,
+          } satisfies GraphEvent),
+          reduceToXY4
+        )
+      ).toThrowError('duplicate');
+    });
+
+    it('dupe y node events shouldnt work', () => {
+      const yToTackleO = pipe(
+        ASCII_EVENTS,
+        RA.findFirst(
+          (e): e is typeof e & { type: 'yAdded' } => e.type === 'yAdded'
+        )
+      );
+      if (isNone(yToTackleO))
+        throw new Error('Expected yToTackleO to be defined');
+      const yToTackle = yToTackleO.value;
+      const nodeIdToTackle = yToTackle.id;
+      expect(() =>
+        pipe(
+          ASCII_EVENTS,
+          RA.appendW({
+            type: 'yAdded',
+            id: nodeIdToTackle,
+            xChainId: yToTackle.xChainId,
+            yChainId: yToTackle.yChainId,
+          } satisfies GraphEvent),
+          reduceToXY4
+        )
+      ).toThrowError('duplicate');
+    });
+
+    it('attach y node on non-existing in X nodeId events shouldnt work', () => {
+      const yToTackle1Node = '3' as NodeId;
+      const xToTackleChainId = '1' as XChainId;
+      const yToTackleChainId = '3' /*1,3,5*/ as YChainId;
+      expect(() =>
+        pipe(
+          ASCII_EVENTS,
+          RA.appendW({
+            type: 'yAdded',
+            id: yToTackle1Node,
+            xChainId: xToTackleChainId,
+            yChainId: yToTackleChainId,
+          } satisfies GraphEvent),
+          reduceToXY4
+        )
+      ).toThrowError('not found');
+    });
+
+    it('wrong xChainId to y shouldnt work', () => {
+      const yToTackle1Node = '4' as NodeId;
+      const xToTackleChainId = '0' as XChainId;
+      const yToTackleChainId = '5' /*1,3,5*/ as YChainId;
+      expect(() => pipe(
+        ASCII_EVENTS,
+        RA.appendW({
+          type: 'yAdded',
+          id: yToTackle1Node,
+          xChainId: xToTackleChainId,
+          yChainId: yToTackleChainId,
+        } satisfies GraphEvent),
+        reduceToXY4)).toThrowError('duplicate');
+    })
+
   });
 });

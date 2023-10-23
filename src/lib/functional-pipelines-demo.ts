@@ -1,5 +1,4 @@
 import * as S from '@effect/schema/Schema';
-import WebSocket_2 from 'vite';
 import { absurd, flow } from 'fp-ts/function';
 import { OrderedMap, OrderedSet } from 'immutable';
 import { pipe } from 'fp-ts/function';
@@ -61,7 +60,7 @@ export type GenericGraph = {
 };
 
 // TODO show that this one needs a hell of a lot of tests to work
-export const reduceToXYMutableNaive0 = (
+export const reduceToXYNaive0 = (
   events: readonly GraphEvent[]
 ): GenericGraph => {
   const xs: Map<XChainId, NodeId[]> = new Map();
@@ -104,6 +103,7 @@ const orderedSetOnce = <T>() => {
         throw new Error(`panic! duplicate ${t} in set; allowed only once`);
       return api(os.add(t));
     },
+    has: (t: T) => os.has(t),
     toArray: () => os.toArray(),
   });
 
@@ -112,7 +112,7 @@ const orderedSetOnce = <T>() => {
 
 type OrderedSetOnce<T> = ReturnType<typeof orderedSetOnce<T>>;
 
-export const reduceToXYMutableNaive1 = (
+export const reduceToXYNaive1 = (
   events: readonly GraphEvent[]
 ): GenericGraph => {
   // used OrderedSet instead of Array
@@ -190,7 +190,7 @@ const orderedMapOnceO = <K, V>() => {
 
 type OrderedMapOnceO<K, V> = ReturnType<typeof orderedMapOnceO<K, V>>;
 
-export const reduceToXYMutableNaive2 = (
+export const reduceToXYNaive2 = (
   events: readonly GraphEvent[]
 ): GenericGraph => {
   const xs: Map<XChainId, OrderedSetOnce<NodeId>> = new Map();
@@ -227,7 +227,7 @@ export const reduceToXYMutableNaive2 = (
   };
 };
 
-export const reduceToXYMutableNaive3 = (
+export const reduceToXYNaive3 = (
   events: readonly GraphEvent[]
 ): GenericGraph => {
   const chains: Map<XChainId, OrderedMapOnceO<NodeId, YChainId>> = new Map();
@@ -284,3 +284,83 @@ export const reduceToXYMutableNaive3 = (
     ),
   };
 };
+
+const xyChains = () => {
+  const setOnce = <T>() => {
+    const api = (s: Set<T>) => ({
+      add: (t: T) => {
+        // TODO Either
+        if (s.has(t))
+          throw new Error(`panic! duplicate ${t} in set; allowed only once`);
+        return api(s.add(t));
+      },
+      toArray: () => [...s],
+    });
+
+    return api(new Set<T>());
+  }
+
+  type SetOnce<T> = ReturnType<typeof setOnce<T>>;
+
+  const xs_ = new Map<XChainId, OrderedSetOnce<NodeId>>();
+  const ys_ = new Map<YChainId, {
+    nodeId: NodeId;
+    xChainIds: SetOnce<XChainId>; // TODO non-empty
+  }>
+
+  // TODO data structures completely immutable with this api
+  const api = (xs: typeof xs_, ys: typeof ys_) => ({
+    addX: (xChainId: XChainId, nodeId: NodeId) => {
+      if (!xs.get(xChainId)) xs.set(xChainId, orderedSetOnce());
+      xs.set(xChainId, xs.get(xChainId)!.add(nodeId));
+      return api(xs, ys);
+    },
+    addY: (yChainId: YChainId, nodeId: NodeId, xChainId: XChainId) => {
+
+      // check against second structure since we're making assumptions about it
+      if (!xs.get(xChainId)) throw new Error(`panic! ${xChainId} chainId not found`);
+      if (!xs.get(xChainId)!.has(nodeId)) throw new Error(`panic! nodeId ${nodeId} in ${xChainId} chainId not found`);
+
+      if (!ys.get(yChainId)) ys.set(yChainId, { nodeId, xChainIds: setOnce() });
+      ys.get(yChainId)!.xChainIds.add(xChainId);
+      return api(xs, ys);
+    },
+    toGenericGraph: (): GenericGraph => ({
+      x: pipe(
+        xs,
+        MAP.map((s) => s.toArray())
+      ),
+      y: pipe(
+        ys,
+        MAP.map((e) => e.xChainIds.toArray().map((xChainId) => ({
+          xChainId,
+          nodeId: e.nodeId,
+        })))
+      ),
+    })
+  })
+
+  return api(xs_, ys_);
+
+};
+
+export const reduceToXY4 = (
+  events: readonly GraphEvent[]
+): GenericGraph => {
+  const chains = xyChains();
+  for (const e of events) {
+    switch (e.type) {
+      case 'xAdded':
+        chains.addX(e.chainId, e.id);
+        break;
+      case 'yAdded':
+        chains.addY(e.yChainId, e.id, e.xChainId);
+        break;
+      default:
+        absurd(e);
+        throw new Error('unreachable');
+    }
+  }
+  return chains.toGenericGraph();
+};
+
