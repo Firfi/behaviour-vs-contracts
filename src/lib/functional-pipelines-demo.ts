@@ -298,15 +298,18 @@ const xyChains = () => {
     });
 
     return api(new Set<T>());
-  }
+  };
 
   type SetOnce<T> = ReturnType<typeof setOnce<T>>;
 
   const xs_ = new Map<XChainId, OrderedSetOnce<NodeId>>();
-  const ys_ = new Map<YChainId, {
-    nodeId: NodeId;
-    xChainIds: SetOnce<XChainId>; // TODO non-empty
-  }>
+  const ys_ = new Map<
+    YChainId,
+    {
+      nodeId: NodeId;
+      xChainIds: SetOnce<XChainId>; // TODO non-empty
+    }
+  >();
 
   // TODO data structures completely immutable with this api
   const api = (xs: typeof xs_, ys: typeof ys_) => ({
@@ -316,10 +319,13 @@ const xyChains = () => {
       return api(xs, ys);
     },
     addY: (yChainId: YChainId, nodeId: NodeId, xChainId: XChainId) => {
-
       // check against second structure since we're making assumptions about it
-      if (!xs.get(xChainId)) throw new Error(`panic! ${xChainId} chainId not found`);
-      if (!xs.get(xChainId)!.has(nodeId)) throw new Error(`panic! nodeId ${nodeId} in ${xChainId} chainId not found`);
+      if (!xs.get(xChainId))
+        throw new Error(`panic! ${xChainId} chainId not found`);
+      if (!xs.get(xChainId)!.has(nodeId))
+        throw new Error(
+          `panic! nodeId ${nodeId} in ${xChainId} chainId not found`
+        );
 
       if (!ys.get(yChainId)) ys.set(yChainId, { nodeId, xChainIds: setOnce() });
       ys.get(yChainId)!.xChainIds.add(xChainId);
@@ -332,21 +338,20 @@ const xyChains = () => {
       ),
       y: pipe(
         ys,
-        MAP.map((e) => e.xChainIds.toArray().map((xChainId) => ({
-          xChainId,
-          nodeId: e.nodeId,
-        })))
+        MAP.map((e) =>
+          e.xChainIds.toArray().map((xChainId) => ({
+            xChainId,
+            nodeId: e.nodeId,
+          }))
+        )
       ),
-    })
-  })
+    }),
+  });
 
   return api(xs_, ys_);
-
 };
 
-export const reduceToXY4 = (
-  events: readonly GraphEvent[]
-): GenericGraph => {
+export const reduceToXY4 = (events: readonly GraphEvent[]): GenericGraph => {
   const chains = xyChains();
   for (const e of events) {
     switch (e.type) {
@@ -363,4 +368,3 @@ export const reduceToXY4 = (
   }
   return chains.toGenericGraph();
 };
-
